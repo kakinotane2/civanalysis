@@ -1,53 +1,39 @@
-import streamlit as st
-import pandas as pd
+import discord
+from discord.ext import commands
+import google.generativeai as genai
 import os
+import aiohttp
 
-# --- ページ設定（恐竜研究所風） ---
-st.set_page_config(page_title="シヴ編成分析所", layout="wide")
+# 【ここが重要】「秘密のポケット(Render)」から値を受け取る設定（4行）
+DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
-# 見た目をカッコよくする設定
-st.markdown("""
-    <style>
-    .main { background-color: #0e1117; color: white; }
-    .stMetric { background-color: #1f2937; padding: 15px; border-radius: 10px; border: 1px solid #374151; }
-    h1 { color: #ff8c00; border-bottom: 2px solid #ff8c00; padding-bottom: 10px; }
-    h2 { color: #00d4ff; }
-    </style>
-    """, unsafe_allow_html=True)
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash')
 
-st.title("🛡️ シヴ編成分析所")
-st.caption("ギルドメンバー全員で使える戦績管理システム")
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix='!', intents=intents)
 
-# --- データの読み込み ---
-CSV_FILE = 'battle_logs.csv'
-if os.path.exists(CSV_FILE):
-    df = pd.read_csv(CSV_FILE)
-else:
-    df = pd.DataFrame(columns=['日時', '味方1', '味方2', '味方3', '敵1', '敵2', '敵3', '結果'])
+@bot.event
+async def on_ready():
+    print(f'Logged in as {bot.user.name}')
 
-# --- サイドメニュー ---
-st.sidebar.title("MENU")
-menu = st.sidebar.radio("機能を選択", ["📊 戦績分析", "📝 使い方ガイド"])
+@bot.event
+async def on_message(message):
+    if message.author.bot or not message.attachments:
+        return
+    for attachment in message.attachments:
+        if any(attachment.filename.lower().endswith(ext) for ext in ['png', 'jpg', 'jpeg']):
+            await message.channel.send("画像を解析中...")
+            async with aiohttp.ClientSession() as session:
+                async with session.get(attachment.url) as resp:
+                    image_data = await resp.read()
+            
+            response = model.generate_content([
+                "この画像はゲームの対戦結果画面です。左側の指揮官名、右側の指揮官名、勝利か敗北かを「名前,名前,勝利」の形式で答えて。",
+                {"mime_type": "image/jpeg", "data": image_data}
+            ])
+            await message.channel.send(f"【解析結果】\n{response.text}")
 
-if menu == "📊 戦績分析":
-    st.header("📈 チーム全体の統計")
-    
-    # 上段に数字を並べる
-    m1, m2, m3 = st.columns(3)
-    with m1:
-        st.metric("総試合数", len(df))
-    with m2:
-        win_count = len(df[df['結果'] == '勝利'])
-        win_rate = (win_count / len(df) * 100) if len(df) > 0 else 0
-        st.metric("平均勝率", f"{win_rate:.1f}%")
-    with m3:
-        st.metric("登録武将数", len(df['味方1'].unique()) if not df.empty else 0)
-
-    st.subheader("📋 最新の戦闘履歴")
-    st.dataframe(df.sort_values('日時', ascending=False), use_container_width=True)
-
-elif menu == "📝 使い方ガイド":
-    st.header("📖 はじめての方へ")
-    st.success("STEP 1: Discordで戦績スクショを投稿")
-    st.info("STEP 2: Botが自動で読み取ってここに追加されます")
-    st.warning("STEP 3: 左のメニューから分析データを確認！")
+bot.run(DISCORD_TOKEN)
