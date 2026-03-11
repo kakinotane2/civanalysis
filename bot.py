@@ -1,15 +1,46 @@
 import discord
 from discord.ext import commands
-import pandas as pd
-import os
+import google.generativeai as genai
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+import io
+import aiohttp
 
-# --- 設定 ---
-TOKEN = os.getenv('DISCORD_TOKEN')
-CSV_FILE = 'battle_logs.csv'
+# ================= 自分で設定する部分 =================
 
+# 1. Discord Botのトークン
+DISCORD_TOKEN = 'あなたのDiscordトークン'
+
+# 2. Google AI (Gemini) APIキー
+GEMINI_API_KEY = 'AIzaSyArpqCFHQgO5-WTrrG4UbAS9fZzWvrLl8I'
+
+# 3. スプレッドシートの名前
+SHEET_NAME = 'シヴ編成分析所'
+
+# ===================================================
+
+# Geminiの設定
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash')
+
+# Discordの設定
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
+
+# スプレッドシートへの書き込み関数
+async def update_sheet(commander1, commander2, result):
+    try:
+        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+        # ここは以前作ったJSONファイル名に書き換えてください
+        creds = ServiceAccountCredentials.from_json_keyfile_name('service-account.json', scope)
+        client = gspread.authorize(creds)
+        sheet = client.open(SHEET_NAME).get_worksheet(0)
+        sheet.append_row([commander1, commander2, result])
+        return True
+    except Exception as e:
+        print(f"シート更新エラー: {e}")
+        return False
 
 @bot.event
 async def on_ready():
@@ -20,36 +51,33 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # 画像が送られたら反応
     if message.attachments:
         for attachment in message.attachments:
-            if any(attachment.filename.lower().endswith(ext) for ext in ['png', 'jpg', 'jpeg', 'heic']):
-                # 受付確認のリアクション（恐竜研究所風）
-                await message.add_reaction('🔍')
+            if any(attachment.filename.lower().endswith(ext) for ext in ['png', 'jpg', 'jpeg']):
+                await message.channel.send("画像を解析中...（APIキー方式で実行中！）")
                 
-                # --- ここで本来は文字を読み取ります ---
-                # 今はRenderが落ちないよう、仮のデータを1行足す機能にします
-                # 準備ができたら、ここに「最強の読み取り機能」を合体させます！
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(attachment.url) as resp:
+                        image_data = await resp.read()
+
+                # Geminiで画像を解析
+                response = model.generate_content([
+                    "この画像はゲームの対戦結果画面です。左側の指揮官名、右側の指揮官名、そして勝利か敗北かを以下の形式で答えてください。例：アーサー,ゼノビア,勝利",
+                    {"mime_type": "image/jpeg", "data": image_data}
+                ])
                 
-                new_data = pd.DataFrame([{
-                    '日時': message.created_at,
-                    '味方1': '解析中', '味方2': '未実装', '味方3': '未実装',
-                    '敵1': '不明', '敵2': '不明', '敵3': '不明',
-                    '結果': '勝利'
-                }])
+                res_text = response.text.strip()
+                await message.channel.send(f"解析結果: {res_text}")
                 
-                if os.path.exists(CSV_FILE):
-                    df = pd.read_csv(CSV_FILE)
-                    df = pd.concat([df, new_data], ignore_index=True)
-                else:
-                    df = new_data
-                
-                df.to_csv(CSV_FILE, index=False)
-                
-                # 完了のリアクション
-                await message.remove_reaction('🔍', bot.user)
-                await message.add_reaction('✅')
+                # スプレッドシートへ（カンマ区切りを想定）
+                try:
+                    c1, c2, res = res_text.split(',')
+                    success = await update_sheet(c1, c2, res)
+                    if success:
+                        await message.channel.send("スプレッドシートに記録しました！")
+                except:
+                    await message.channel.send("解析に失敗しました。もう一度はっきりした画像を送ってください。")
 
     await bot.process_commands(message)
 
-bot.run(TOKEN)
+bot.run(MTQ4MTI2MzMwNDEwNTI2NzI0MQ.GlW4qi.msHp8VmJXaNR9O-U6cgH4rpsXnVS_IcLUJDRM8)
