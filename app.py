@@ -1,3 +1,4 @@
+# test
 import streamlit as st
 import pandas as pd
 import os
@@ -47,4 +48,5 @@ if os.path.exists(CSV_FILE):
         st.bar_chart(daily)
 
 else:
+
     st.error("まだデータ（battle_logs.csv）がありません。Botに画像を投げてデータを作ってください！")
