@@ -1,5 +1,2 @@
-discord.py
-opencv-python-headless
-numpy
 streamlit
 pandas
