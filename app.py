@@ -21,6 +21,7 @@ async def on_ready():
 
 @bot.event
 async def on_message(message):
+    await bot.process_commands(message) # この一行を追加
     if message.author.bot or not message.attachments:
         return
     for attachment in message.attachments:
@@ -37,4 +38,5 @@ async def on_message(message):
             await message.channel.send(f"【解析結果】\n{response.text}")
 
 bot.run(DISCORD_TOKEN)
+
 
