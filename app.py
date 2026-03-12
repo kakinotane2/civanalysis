@@ -9,7 +9,7 @@ DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-2.0-flash')
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -37,3 +37,4 @@ async def on_message(message):
             await message.channel.send(f"【解析結果】\n{response.text}")
 
 bot.run(DISCORD_TOKEN)
+
